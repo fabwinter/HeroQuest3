@@ -1,16 +1,30 @@
 # HeroQuest Map Generator (Next.js)
 
-This repository now contains a starter Next.js web app that generates HeroQuest maps on the canonical 26x19 board using a deterministic, rule-based generator.
+A Next.js web app starter for generating HeroQuest quest maps on the canonical 26x19 board.
 
-## Implemented
+## What this now includes
 
-- App Router UI with sliders, dropdown, checkboxes, free-text prompt, seed input, and JSON export.
-- `/api/generate` route that validates input with Zod and generates a map document.
-- Layered map JSON format with `meta`, `board`, `entities`, and `events`.
-- Deterministic seeded placement for doors, monsters, traps, and furniture.
-- Basic SVG board renderer (26x19) with visual markers for generated entities.
+- Next.js App Router UI with:
+  - seed input
+  - edition dropdown
+  - free-text prompt
+  - sliders (monster/trap/furniture)
+  - checkboxes for trap and rule toggles
+  - `Generate` and `Export JSON`
+- `/api/generate` route:
+  - strict Zod request validation
+  - deterministic rule-based generation
+  - semantic map validation before returning success
+- Validation layer:
+  - board size guard (26x19)
+  - bounds checks
+  - tile overlap detection
+  - start/stairs tile safety check
+- Explicit project detection metadata:
+  - `next` pinned in dependencies
+  - `vercel.json` with `framework: nextjs` and `rootDirectory: .`
 
-## Run
+## Local run
 
 ```bash
 npm install
@@ -18,3 +32,7 @@ npm run dev
 ```
 
 Then open `http://localhost:3000`.
+
+## Note on environments with restricted registries
+
+If your environment blocks npm registry access, dependency installation and runtime checks will fail. In that case, run the same commands in a network-enabled environment.

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { generateMap } from "@/lib/generator";
+import { validateMap } from "@/lib/validation";
 
 const requestSchema = z.object({
   seed: z.string().min(1).default("default-seed"),
@@ -11,7 +12,16 @@ const requestSchema = z.object({
     trapDensity: z.number().min(0).max(1),
     furnitureDensity: z.number().min(0).max(1)
   }),
-  toggles: z.record(z.boolean())
+  toggles: z.object({
+    pit: z.boolean(),
+    falling_block: z.boolean(),
+    spear: z.boolean(),
+    chest_trap: z.boolean(),
+    strictRules: z.boolean(),
+    allowSecretDoors: z.boolean(),
+    allowFalseDoors: z.boolean(),
+    allowTeleportDoors: z.boolean()
+  })
 });
 
 export async function POST(request: Request) {
@@ -32,5 +42,10 @@ export async function POST(request: Request) {
     toggles: parsed.data.toggles
   });
 
-  return NextResponse.json(map);
+  const validation = validateMap(map);
+  if (!validation.valid) {
+    return NextResponse.json({ error: "Generated map failed validation", validation, map }, { status: 422 });
+  }
+
+  return NextResponse.json({ map, validation });
 }

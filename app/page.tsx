@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { HeroQuestMapDocument } from "@/lib/types";
+import { HeroQuestMapDocument, ValidationResult } from "@/lib/types";
 
 const cell = 28;
 
@@ -25,6 +25,8 @@ const initial = {
 export default function Page() {
   const [state, setState] = useState(initial);
   const [map, setMap] = useState<HeroQuestMapDocument | null>(null);
+  const [validation, setValidation] = useState<ValidationResult | null>(null);
+  const [error, setError] = useState<string>("");
   const [loading, setLoading] = useState(false);
 
   const entitiesByKind = useMemo(() => {
@@ -37,32 +39,47 @@ export default function Page() {
 
   const generate = async () => {
     setLoading(true);
-    const res = await fetch("/api/generate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        seed: state.seed,
-        prompt: state.prompt,
-        editionPackId: state.editionPackId,
-        sliders: {
-          monsterBudget: state.monsterBudget,
-          trapDensity: state.trapDensity,
-          furnitureDensity: state.furnitureDensity
-        },
-        toggles: {
-          pit: state.pit,
-          falling_block: state.falling_block,
-          spear: state.spear,
-          chest_trap: state.chest_trap,
-          strictRules: state.strictRules,
-          allowSecretDoors: state.allowSecretDoors,
-          allowFalseDoors: state.allowFalseDoors,
-          allowTeleportDoors: state.allowTeleportDoors
-        }
-      })
-    });
+    setError("");
 
-    setMap(await res.json());
+    try {
+      const res = await fetch("/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          seed: state.seed,
+          prompt: state.prompt,
+          editionPackId: state.editionPackId,
+          sliders: {
+            monsterBudget: state.monsterBudget,
+            trapDensity: state.trapDensity,
+            furnitureDensity: state.furnitureDensity
+          },
+          toggles: {
+            pit: state.pit,
+            falling_block: state.falling_block,
+            spear: state.spear,
+            chest_trap: state.chest_trap,
+            strictRules: state.strictRules,
+            allowSecretDoors: state.allowSecretDoors,
+            allowFalseDoors: state.allowFalseDoors,
+            allowTeleportDoors: state.allowTeleportDoors
+          }
+        })
+      });
+
+      const payload = await res.json();
+      if (!res.ok) {
+        setError(payload.error ?? "Generation failed");
+        setMap(payload.map ?? null);
+        setValidation(payload.validation ?? null);
+      } else {
+        setMap(payload.map);
+        setValidation(payload.validation);
+      }
+    } catch {
+      setError("Request failed.");
+    }
+
     setLoading(false);
   };
 
@@ -81,10 +98,13 @@ export default function Page() {
     <main>
       <aside className="panel">
         <h2>HeroQuest Map Generator</h2>
+        <p>Next.js {"15.1.6"} · canonical board 26×19</p>
+
         <div className="section">
           <label>Seed</label>
           <input value={state.seed} onChange={(e) => setState({ ...state, seed: e.target.value })} />
         </div>
+
         <div className="section">
           <label>Edition Pack</label>
           <select value={state.editionPackId} onChange={(e) => setState({ ...state, editionPackId: e.target.value })}>
@@ -94,10 +114,12 @@ export default function Page() {
             <option value="homebrew">Homebrew</option>
           </select>
         </div>
+
         <div className="section">
           <label>Theme prompt</label>
           <textarea value={state.prompt} onChange={(e) => setState({ ...state, prompt: e.target.value })} />
         </div>
+
         <div className="section">
           <label>Monster budget: {state.monsterBudget}</label>
           <input type="range" min={0} max={20} value={state.monsterBudget} onChange={(e) => setState({ ...state, monsterBudget: Number(e.target.value) })} />
@@ -106,32 +128,60 @@ export default function Page() {
           <label>Furniture density: {state.furnitureDensity.toFixed(2)}</label>
           <input type="range" min={0} max={1} step={0.05} value={state.furnitureDensity} onChange={(e) => setState({ ...state, furnitureDensity: Number(e.target.value) })} />
         </div>
+
         <div className="section">
           {["pit", "falling_block", "spear", "chest_trap", "strictRules", "allowSecretDoors", "allowFalseDoors", "allowTeleportDoors"].map((key) => (
             <label className="check" key={key}>
-              <input type="checkbox" checked={Boolean((state as Record<string, unknown>)[key])} onChange={(e) => setState({ ...state, [key]: e.target.checked })} />{key}
+              <input
+                type="checkbox"
+                checked={Boolean((state as Record<string, unknown>)[key])}
+                onChange={(e) => setState({ ...state, [key]: e.target.checked })}
+              />
+              {key}
             </label>
           ))}
         </div>
+
         <div className="actions">
           <button onClick={generate} disabled={loading}>{loading ? "Generating..." : "Generate"}</button>
           <button onClick={downloadJson} disabled={!map}>Export JSON</button>
         </div>
+
+        {error && <p style={{ color: "#fca5a5" }}>{error}</p>}
+        {validation && (
+          <p style={{ color: validation.valid ? "#86efac" : "#fca5a5" }}>
+            Validation: {validation.valid ? "pass" : `fail (${validation.errors.length} issue(s))`}
+          </p>
+        )}
       </aside>
+
       <section className="grid">
         <svg width={26 * cell} height={19 * cell} style={{ background: "#f8fafc", borderRadius: 8 }}>
-          {Array.from({ length: 27 }).map((_, i) => <line key={`v-${i}`} x1={i * cell} y1={0} x2={i * cell} y2={19 * cell} stroke="#d1d5db" strokeWidth={1} />)}
-          {Array.from({ length: 20 }).map((_, i) => <line key={`h-${i}`} x1={0} y1={i * cell} x2={26 * cell} y2={i * cell} stroke="#d1d5db" strokeWidth={1} />)}
+          {Array.from({ length: 27 }).map((_, i) => (
+            <line key={`v-${i}`} x1={i * cell} y1={0} x2={i * cell} y2={19 * cell} stroke="#d1d5db" strokeWidth={1} />
+          ))}
+          {Array.from({ length: 20 }).map((_, i) => (
+            <line key={`h-${i}`} x1={0} y1={i * cell} x2={26 * cell} y2={i * cell} stroke="#d1d5db" strokeWidth={1} />
+          ))}
+
           {map?.entities.map((e) => {
-            if (!("x" in e.placement.at)) return null;
+            if (e.kind === "door") {
+              const at = e.placement.at;
+              const x = at.x * cell;
+              const y = at.y * cell;
+              return <rect key={e.id} x={x + 10} y={y + 10} width={8} height={8} fill="#059669"><title>{e.id}</title></rect>;
+            }
+
             const x = e.placement.at.x * cell + cell / 2;
             const y = e.placement.at.y * cell + cell / 2;
-            const color = e.kind === "monster" ? "#dc2626" : e.kind === "trap" ? "#f59e0b" : e.kind === "furniture" ? "#2563eb" : "#16a34a";
+            const color = e.kind === "monster" ? "#dc2626" : e.kind === "trap" ? "#f59e0b" : "#2563eb";
             return <circle key={e.id} cx={x} cy={y} r={8} fill={color}><title>{e.id}</title></circle>;
           })}
         </svg>
+
         <h3>Generated summary</h3>
         <pre>{map ? JSON.stringify(entitiesByKind, null, 2) : "Generate a map to see entities."}</pre>
+        {validation && !validation.valid && <pre>{JSON.stringify(validation.errors, null, 2)}</pre>}
       </section>
     </main>
   );
