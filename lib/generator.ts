@@ -27,6 +27,7 @@ function pickOpenTile(state: { v: number }, used: Set<string>): Point {
   for (let i = 0; i < 1000; i += 1) {
     const point = { x: Math.floor(rand(state) * 24) + 1, y: Math.floor(rand(state) * 17) + 1 };
     const key = `${point.x},${point.y}`;
+
     if (!used.has(key) && !(point.x === 1 && point.y === 1)) {
       used.add(key);
       return point;
@@ -43,13 +44,33 @@ export function generateMap(input: {
   trapDensity: number;
   furnitureDensity: number;
   editionPackId: HeroQuestMapDocument["meta"]["editionPackId"];
-  toggles: Record<string, boolean>;
+  toggles: {
+    pit: boolean;
+    falling_block: boolean;
+    spear: boolean;
+    chest_trap: boolean;
+    strictRules: boolean;
+    allowSecretDoors: boolean;
+    allowFalseDoors: boolean;
+    allowTeleportDoors: boolean;
+  };
 }): HeroQuestMapDocument {
   const state = { v: hashSeed(input.seed || "default-seed") || 1 };
   const usedTiles = new Set<string>();
-
   const entities: HeroQuestMapDocument["entities"] = [];
   const events: HeroQuestMapDocument["events"] = [];
+
+  const secondaryDoorType = input.toggles.allowTeleportDoors
+    ? "teleport"
+    : input.toggles.allowFalseDoors
+      ? "false"
+      : input.toggles.allowSecretDoors
+        ? "secret"
+        : "normal";
+
+  const secondaryDoorReveal = secondaryDoorType === "secret" ? "never" : "start";
+  const secondaryDoorLayer = secondaryDoorType === "secret" ? "gm" : "public";
+  const secondaryDoorState = secondaryDoorType === "secret" ? "hidden" : "closed";
 
   entities.push(
     {
@@ -61,20 +82,21 @@ export function generateMap(input: {
     {
       id: "door_2",
       kind: "door",
-      placement: {
-        layer: input.toggles.allowSecretDoors ? "gm" : "public",
-        reveal: input.toggles.allowSecretDoors ? "never" : "start",
-        at: DOOR_FRAMES[1]
-      },
-      data: { doorType: input.toggles.allowSecretDoors ? "secret" : "normal", state: input.toggles.allowSecretDoors ? "hidden" : "closed" }
+      placement: { layer: secondaryDoorLayer, reveal: secondaryDoorReveal, at: DOOR_FRAMES[1] },
+      data: { doorType: secondaryDoorType, state: secondaryDoorState }
     }
   );
 
   const monsterCount = Math.max(0, Math.min(10, Math.round(input.monsterBudget / 2)));
+  const monsterIds: string[] = [];
+
   for (let i = 0; i < monsterCount; i += 1) {
     const point = pickOpenTile(state, usedTiles);
+    const id = `monster_${i + 1}`;
+    monsterIds.push(id);
+
     entities.push({
-      id: `monster_${i + 1}`,
+      id,
       kind: "monster",
       placement: { layer: "gm", reveal: "on_open", at: point },
       data: { monsterId: i % 3 === 0 ? "orc" : i % 2 === 0 ? "skeleton" : "goblin", groupId: "encounter_1" }
@@ -88,11 +110,16 @@ export function generateMap(input: {
   if (input.toggles.chest_trap) trapTypes.push("chest_trap");
 
   const trapCount = Math.max(0, Math.min(8, Math.round(input.trapDensity * 8)));
+  const trapIds: string[] = [];
+
   for (let i = 0; i < trapCount; i += 1) {
     const point = pickOpenTile(state, usedTiles);
     const trapType = trapTypes.length > 0 ? trapTypes[i % trapTypes.length] : "pit";
+    const id = `trap_${i + 1}`;
+    trapIds.push(id);
+
     entities.push({
-      id: `trap_${i + 1}`,
+      id,
       kind: "trap",
       placement: { layer: "gm", reveal: "on_search", at: point },
       data: { trapType, armed: true, discovered: false }
@@ -102,6 +129,7 @@ export function generateMap(input: {
   const furnitureCount = Math.max(0, Math.min(8, Math.round(input.furnitureDensity * 8)));
   for (let i = 0; i < furnitureCount; i += 1) {
     const point = pickOpenTile(state, usedTiles);
+
     entities.push({
       id: `furniture_${i + 1}`,
       kind: "furniture",
@@ -115,11 +143,11 @@ export function generateMap(input: {
     trigger: { type: "on_open_door", ref: "door_1" },
     actions: [
       { type: "message", value: input.prompt || "The chamber opens into darkness." },
-      { type: "reveal", ref: "encounter_1" }
+      ...monsterIds.slice(0, input.toggles.strictRules ? 2 : monsterIds.length).map((id) => ({ type: "reveal" as const, ref: id }))
     ]
   });
 
-  if (input.toggles.allowSecretDoors) {
+  if (secondaryDoorType === "secret") {
     events.push({
       id: "ev_search_secret_door",
       trigger: { type: "on_search_traps", at: { x: 12, y: 11 } },
@@ -127,10 +155,18 @@ export function generateMap(input: {
     });
   }
 
-  if (trapCount > 0) {
+  if (secondaryDoorType === "teleport") {
+    events.push({
+      id: "ev_teleport_door_2",
+      trigger: { type: "on_open_door", ref: "door_2" },
+      actions: [{ type: "message", value: "A magical force shifts the room around you." }]
+    });
+  }
+
+  if (trapIds.length > 0) {
     events.push({
       id: "ev_trap_trigger_1",
-      trigger: { type: "on_trap_trigger", ref: "trap_1" },
+      trigger: { type: "on_trap_trigger", ref: trapIds[0] },
       actions: [{ type: "damage", value: { target: "active_hero", amount: 1 } }, { type: "message", value: "A trap is sprung." }]
     });
   }
@@ -141,7 +177,7 @@ export function generateMap(input: {
       title: "Generated HeroQuest Map",
       seed: input.seed,
       createdAt: new Date().toISOString(),
-      generator: { name: "hq-next-gen", version: "0.2.0", mode: "rule_based" },
+      generator: { name: "hq-next-gen", version: "0.3.0", mode: "rule_based" },
       editionPackId: input.editionPackId
     },
     board: {

@@ -15,6 +15,7 @@ export function validateMap(map: HeroQuestMapDocument): ValidationResult {
   }
 
   const occupancy = new Set<string>();
+  const entityIds = new Set(map.entities.map((entity) => entity.id));
 
   for (const entity of map.entities) {
     if (entity.kind === "door") {
@@ -22,6 +23,7 @@ export function validateMap(map: HeroQuestMapDocument): ValidationResult {
       if (!door.edge) {
         errors.push(`Door ${entity.id} is not edge-placed`);
       }
+
       if (!inBounds(door.x, door.y)) {
         errors.push(`Door ${entity.id} edge coordinates are out of bounds`);
       }
@@ -49,6 +51,16 @@ export function validateMap(map: HeroQuestMapDocument): ValidationResult {
   for (const event of map.events) {
     if (event.trigger.at && !inBounds(event.trigger.at.x, event.trigger.at.y)) {
       errors.push(`Event ${event.id} has out-of-bounds trigger coordinates`);
+    }
+
+    if (event.trigger.ref && !entityIds.has(event.trigger.ref)) {
+      errors.push(`Event ${event.id} trigger ref '${event.trigger.ref}' does not match any entity`);
+    }
+
+    for (const action of event.actions) {
+      if (action.ref && !entityIds.has(action.ref)) {
+        errors.push(`Event ${event.id} action ref '${action.ref}' does not match any entity`);
+      }
     }
   }
 
